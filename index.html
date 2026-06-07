@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>授業スケジュール表管理ツール</title>
+  <meta name="description" content="Googleカレンダー風の洗練されたデザインで、授業時間を60分・90分・120分から選んで簡単スケジュール登録。生徒ごとの色分け、重複チェック、ダークモード対応。">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- App Header -->
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-icon">L</div>
+      <h1 class="brand-title">授業スケジュール管理</h1>
+    </div>
+
+    <!-- Calendar Navigation & Controls -->
+    <div class="header-controls">
+      <!-- View Switcher -->
+      <div class="view-switcher">
+        <button id="viewWeekBtn" class="view-toggle-btn" data-view="week">週</button>
+        <button id="viewMonthBtn" class="view-toggle-btn active" data-view="month">月</button>
+      </div>
+
+      <div class="calendar-nav">
+        <button id="prevBtn" class="nav-btn" aria-label="前へ">
+          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+        </button>
+        <button id="todayBtn" class="nav-btn">今日</button>
+        <button id="nextBtn" class="nav-btn" aria-label="次へ">
+          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+
+      <span id="currentPeriodLabel" class="current-week-label">2026年 6月 8日 〜 14日</span>
+
+      <button id="themeToggleBtn" class="btn-icon-only" aria-label="テーマ切り替え">
+        <svg id="themeIcon" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <!-- Moon Icon (Default for Light theme to switch to dark) -->
+          <path class="moon-path" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+        </svg>
+      </button>
+
+      <button id="manageStudentsBtn" class="btn btn-secondary">
+        <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+        <span>生徒名簿</span>
+      </button>
+
+      <button id="addLessonBtn" class="btn btn-primary">
+        <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+        <span>授業を追加</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Sidebar Panel: Quick Filters and Reset -->
+  <div class="sidebar-panel">
+    <div class="filter-group">
+      <label for="studentFilter" class="filter-label">生徒で絞り込み:</label>
+      <select id="studentFilter" class="select-input">
+        <option value="all">すべての生徒</option>
+      </select>
+    </div>
+
+    <div class="filter-group">
+      <button id="resetDemoDataBtn" class="btn btn-secondary" style="font-size: 0.8rem; padding: 0.5rem 0.875rem;">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H18.5"/></svg>
+        デモデータの読み込み
+      </button>
+    </div>
+  </div>
+
+  <!-- Main Calendar View -->
+  <main class="calendar-outer-container">
+    <div id="calendarInnerContainer" class="calendar-inner-container">
+      
+      <!-- Week View Panel -->
+      <div id="weekViewPanel" class="calendar-view-panel">
+        <!-- Grid Header (Days of week) -->
+        <div id="calendarHeader" class="calendar-header-grid">
+          <div class="time-zone-cell">GMT+9</div>
+          <!-- Will be dynamically populated by JS with day cells -->
+        </div>
+
+        <!-- Grid Body (Scrollable times and day columns) -->
+        <div class="calendar-scroll-area">
+          <div id="calendarBody" class="calendar-body-grid">
+            
+            <!-- Left Time Axis Column -->
+            <div id="timeAxisCol" class="time-axis-col">
+              <!-- Will be populated by JS -->
+            </div>
+
+            <!-- Day Columns (7 columns) -->
+            <!-- Generated dynamically in JS to assign proper dates and event handlers -->
+            <div id="dayColumnsContainer" style="display: contents;">
+              <!-- 7 .day-column items will be inserted here -->
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Month View Panel -->
+      <div id="monthViewPanel" class="calendar-view-panel" style="display: none;">
+        <!-- Day Names Header -->
+        <div class="month-header-grid">
+          <div class="month-header-cell text-sun">日</div>
+          <div class="month-header-cell">月</div>
+          <div class="month-header-cell">火</div>
+          <div class="month-header-cell">水</div>
+          <div class="month-header-cell">木</div>
+          <div class="month-header-cell">金</div>
+          <div class="month-header-cell text-sat">土</div>
+        </div>
+        <!-- Days Grid (6 rows * 7 columns) -->
+        <div id="monthDaysGrid" class="month-days-grid">
+          <!-- Will be dynamically populated by JS -->
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Toast Notification System -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- Lesson Create / Edit Modal -->
+  <div id="lessonModal" class="modal-backdrop">
+    <form id="lessonForm" class="modal-content">
+      <header class="modal-header">
+        <h2 id="modalTitle" class="modal-title">授業予定の追加</h2>
+        <button type="button" id="closeLessonModalBtn" class="modal-close-btn" aria-label="閉じる">&times;</button>
+      </header>
+      <input type="hidden" id="lessonId" value="">
+      <div class="modal-body">
+        
+        <!-- Student Field -->
+        <div class="form-group">
+          <label for="lessonStudent" class="form-label">生徒名 <span style="color: #ef4444;">*</span></label>
+          <select id="lessonStudent" class="form-control" required>
+            <option value="" disabled selected>生徒を選択してください</option>
+          </select>
+        </div>
+
+        <!-- Date Field (Single Date - Edit Mode) -->
+        <div id="singleDateGroup" class="form-group" style="display: none;">
+          <label for="lessonDate" class="form-label">日付 <span style="color: #ef4444;">*</span></label>
+          <input type="date" id="lessonDate" class="form-control">
+        </div>
+
+        <!-- Date Field (Multiple Date - Create Mode) -->
+        <div id="multiDateGroup" class="form-group">
+          <label class="form-label">授業日（カレンダー上でクリックして複数選択・一括登録） <span style="color: #ef4444;">*</span></label>
+          <div class="mini-calendar-wrapper">
+            <div class="mini-calendar-header">
+              <button type="button" id="prevMiniMonthBtn" class="nav-btn" style="padding: 0.25rem 0.5rem;">&lt;</button>
+              <span id="miniMonthLabel" class="mini-month-label" style="font-weight: 700; font-size: 0.9rem;">2026年 6月</span>
+              <button type="button" id="nextMiniMonthBtn" class="nav-btn" style="padding: 0.25rem 0.5rem;">&gt;</button>
+            </div>
+            <div class="mini-calendar-weekdays">
+              <div class="mini-weekday text-sun">日</div>
+              <div class="mini-weekday">月</div>
+              <div class="mini-weekday">火</div>
+              <div class="mini-weekday">水</div>
+              <div class="mini-weekday">木</div>
+              <div class="mini-weekday">金</div>
+              <div class="mini-weekday text-sat">土</div>
+            </div>
+            <div id="miniCalendarGrid" class="mini-calendar-grid">
+              <!-- Dynamically populated 42 cells -->
+            </div>
+          </div>
+          <div id="selectedDatesDisplay" class="selected-dates-display">
+            選択された日付: なし
+          </div>
+        </div>
+
+        <!-- Start Time & Computed End Time -->
+        <div class="form-row">
+          <div class="form-group">
+            <label for="lessonStartTime" class="form-label">開始時間 <span style="color: #ef4444;">*</span></label>
+            <select id="lessonStartTime" class="form-control" required></select>
+          </div>
+          <div class="form-group">
+            <label for="lessonEndTimeShow" class="form-label">終了時間（自動計算）</label>
+            <input type="text" id="lessonEndTimeShow" class="form-control" style="background-color: var(--bg-tertiary);" readonly>
+          </div>
+        </div>
+
+        <!-- Duration Options (60分, 90分, 120分) -->
+        <div class="form-group">
+          <label class="form-label">授業時間 <span style="color: #ef4444;">*</span></label>
+          <div class="duration-selector">
+            <div class="duration-option">
+              <input type="radio" id="duration60" name="lessonDuration" value="60" checked>
+              <label for="duration60" class="duration-label">60分</label>
+            </div>
+            <div class="duration-option">
+              <input type="radio" id="duration90" name="lessonDuration" value="90">
+              <label for="duration90" class="duration-label">90分</label>
+            </div>
+            <div class="duration-option">
+              <input type="radio" id="duration120" name="lessonDuration" value="120">
+              <label for="duration120" class="duration-label">120分</label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card Colors -->
+        <div class="form-group">
+          <label class="form-label">表示カラー</label>
+          <div class="color-picker-row">
+            <label class="color-option">
+              <input type="radio" name="lessonColor" value="blue" checked>
+              <span class="color-dot color-dot-blue"></span>
+            </label>
+            <label class="color-option">
+              <input type="radio" name="lessonColor" value="green">
+              <span class="color-dot color-dot-green"></span>
+            </label>
+            <label class="color-option">
+              <input type="radio" name="lessonColor" value="purple">
+              <span class="color-dot color-dot-purple"></span>
+            </label>
+            <label class="color-option">
+              <input type="radio" name="lessonColor" value="orange">
+              <span class="color-dot color-dot-orange"></span>
+            </label>
+            <label class="color-option">
+              <input type="radio" name="lessonColor" value="rose">
+              <span class="color-dot color-dot-rose"></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Memo Field -->
+        <div class="form-group">
+          <label for="lessonMemo" class="form-label">メモ</label>
+          <textarea id="lessonMemo" class="form-control" rows="2" placeholder="持ち物、学習内容など"></textarea>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="deleteLessonBtn" class="btn btn-secondary" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.2); display: none;">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+          削除
+        </button>
+        <button type="button" id="cancelLessonModalBtn" class="btn btn-secondary">キャンセル</button>
+        <button type="submit" class="btn btn-primary">保存</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Student Management Modal -->
+  <div id="studentModal" class="modal-backdrop">
+    <div class="modal-content">
+      <header class="modal-header">
+        <h2 class="modal-title">生徒名簿の管理</h2>
+        <button type="button" id="closeStudentModalBtn" class="modal-close-btn" aria-label="閉じる">&times;</button>
+      </header>
+      <div class="modal-body">
+        <!-- List of existing students -->
+        <label class="form-label">登録中の生徒一覧</label>
+        <div id="studentList" class="student-list-container">
+          <!-- Dynamically populated student items -->
+        </div>
+
+        <!-- Add new student form -->
+        <label class="form-label" for="newStudentName">新規生徒の追加</label>
+        <div class="add-student-form">
+          <input type="text" id="newStudentName" class="form-control" placeholder="生徒名を入力">
+          <button type="button" id="saveNewStudentBtn" class="btn btn-primary">追加</button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="closeStudentModalFooterBtn" class="btn btn-secondary">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- JS Logic Import -->
+  <script src="app.js"></script>
+</body>
+</html>
