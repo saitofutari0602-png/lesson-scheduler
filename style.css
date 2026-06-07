@@ -153,6 +153,23 @@ body {
   -webkit-text-fill-color: transparent;
 }
 
+/* Warning Banner */
+.warning-banner {
+  background-color: var(--warning-bg, #fff3cd);
+  color: var(--warning-text, #856404);
+  padding: 0.5rem 1rem;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 500;
+  border-bottom: 1px solid var(--warning-border, #ffeeba);
+}
+
+body.dark-mode .warning-banner {
+  background-color: rgba(234, 179, 8, 0.2);
+  color: #facc15;
+  border-bottom: 1px solid rgba(234, 179, 8, 0.3);
+}
+
 .header-controls {
   display: flex;
   align-items: center;
