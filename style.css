@@ -338,6 +338,10 @@ body {
   font-size: 0.75rem;
   color: var(--text-muted);
   font-weight: 500;
+  position: sticky;
+  left: 0;
+  z-index: 6;
+  background-color: var(--bg-tertiary);
 }
 
 .day-header-cell {
@@ -421,6 +425,9 @@ body {
   border-right: 1px solid var(--border-color);
   background-color: var(--bg-tertiary);
   user-select: none;
+  position: sticky;
+  left: 0;
+  z-index: 5;
 }
 
 .time-axis-cell {
