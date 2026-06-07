@@ -1,4 +1,11 @@
 // App Configuration
+const urlParams = new URLSearchParams(window.location.search);
+const isReadOnly = window.FORCE_READONLY || urlParams.get('mode') === 'view' || urlParams.get('view') === 'readonly';
+
+const SUPABASE_URL = 'https://bzobwzodgcfzaitgebya.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_sg24lQQkvMWmGvJKenCqtg_DcpiYw3P';
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
 const START_HOUR = 12;
 const END_HOUR = 22;
 const HOURS_COUNT = END_HOUR - START_HOUR;
@@ -106,9 +113,16 @@ function generateUUID() {
 }
 
 // Initialize Application
-function init() {
-  // Load State from LocalStorage
-  loadStateFromStorage();
+async function init() {
+  // Apply Read-Only Mode UI changes
+  if (isReadOnly) {
+    if (addLessonBtn) addLessonBtn.style.display = 'none';
+    if (manageStudentsBtn) manageStudentsBtn.style.display = 'none';
+    if (resetDemoDataBtn) resetDemoDataBtn.style.display = 'none';
+  }
+
+  // Load State from LocalStorage and Supabase
+  await loadStateFromStorage();
 
   // Draw static grids
   renderTimeAxis();
@@ -179,35 +193,9 @@ function getDefaultLessons() {
   ];
 }
 
-// Load from LocalStorage
-function loadStateFromStorage() {
-  const localLessons = localStorage.getItem('lesson_scheduler_lessons');
-  const localStudents = localStorage.getItem('lesson_scheduler_students');
+// Load from Supabase and LocalStorage (for theme)
+async function loadStateFromStorage() {
   const localTheme = localStorage.getItem('lesson_scheduler_theme');
-
-  if (localLessons) {
-    state.lessons = JSON.parse(localLessons);
-  } else {
-    state.lessons = getDefaultLessons();
-    saveLessonsToStorage();
-  }
-
-  if (localStudents) {
-    state.students = JSON.parse(localStudents);
-  } else {
-    // Initial standard student list
-    state.students = [
-      { id: 'st-1', name: '平山 美晴' },
-      { id: 'st-2', name: '山中 泰成' },
-      { id: 'st-3', name: '杉本 守' },
-      { id: 'st-4', name: '松本 泰吾' },
-      { id: 'st-5', name: '清村 優子' },
-      { id: 'st-6', name: '内山 光莉' },
-      { id: 'st-7', name: '徳丸 幸樹' },
-      { id: 'st-8', name: '永井 桔平' }
-    ];
-    saveStudentsToStorage();
-  }
 
   // Set Theme
   if (localTheme) {
@@ -218,14 +206,43 @@ function loadStateFromStorage() {
     state.theme = prefersDark ? 'dark' : 'light';
   }
   applyTheme();
-}
 
-function saveLessonsToStorage() {
-  localStorage.setItem('lesson_scheduler_lessons', JSON.stringify(state.lessons));
-}
+  try {
+    // Fetch students
+    const { data: studentsData, error: studentsError } = await supabaseClient.from('students').select('*');
+    if (studentsError) throw studentsError;
 
-function saveStudentsToStorage() {
-  localStorage.setItem('lesson_scheduler_students', JSON.stringify(state.students));
+    if (studentsData && studentsData.length > 0) {
+      state.students = studentsData;
+    } else {
+      // Initial standard student list
+      state.students = [
+        { id: 'st-1', name: '平山 美晴' },
+        { id: 'st-2', name: '山中 泰成' },
+        { id: 'st-3', name: '杉本 守' },
+        { id: 'st-4', name: '松本 泰吾' },
+        { id: 'st-5', name: '清村 優子' },
+        { id: 'st-6', name: '内山 光莉' },
+        { id: 'st-7', name: '徳丸 幸樹' },
+        { id: 'st-8', name: '永井 桔平' }
+      ];
+      await supabaseClient.from('students').insert(state.students);
+    }
+
+    // Fetch lessons
+    const { data: lessonsData, error: lessonsError } = await supabaseClient.from('lessons').select('*');
+    if (lessonsError) throw lessonsError;
+
+    if (lessonsData && lessonsData.length > 0) {
+      state.lessons = lessonsData;
+    } else {
+      state.lessons = getDefaultLessons();
+      await supabaseClient.from('lessons').insert(state.lessons);
+    }
+  } catch (error) {
+    console.error('Error loading data from Supabase:', error);
+    showToast('データの読み込みに失敗しました', 'error');
+  }
 }
 
 function applyTheme() {
@@ -245,7 +262,7 @@ function applyTheme() {
 }
 
 // Generate Demo Data
-function loadDemoData() {
+async function loadDemoData() {
   // Reset student list to the 8 names
   state.students = [
     { id: 'st-1', name: '平山 美晴' },
@@ -257,15 +274,25 @@ function loadDemoData() {
     { id: 'st-7', name: '徳丸 幸樹' },
     { id: 'st-8', name: '永井 桔平' }
   ];
-  saveStudentsToStorage();
-  updateStudentDropdowns();
 
-  // Load user request-defined lessons for June 2026
   state.lessons = getDefaultLessons();
 
-  saveLessonsToStorage();
-  updateCalendar();
-  showToast('デモデータを読み込みました！');
+  try {
+    // Delete all existing data
+    await supabaseClient.from('lessons').delete().neq('id', 'dummy');
+    await supabaseClient.from('students').delete().neq('id', 'dummy');
+
+    // Insert demo data
+    await supabaseClient.from('students').insert(state.students);
+    await supabaseClient.from('lessons').insert(state.lessons);
+
+    updateStudentDropdowns();
+    updateCalendar();
+    showToast('デモデータを読み込みました！');
+  } catch (error) {
+    console.error('Error loading demo data:', error);
+    showToast('デモデータの読み込みに失敗しました', 'error');
+  }
 }
 
 // Render Time Axis Column
@@ -362,6 +389,7 @@ function updateCalendarMonth() {
 
     // Add cell click listener to create lesson
     cell.addEventListener('click', (e) => {
+      if (isReadOnly) return;
       // Ignore click if user clicked a lesson card
       if (e.target.closest('.lesson-card')) return;
       openLessonModalForCreate(dateStr, '16:00');
@@ -446,6 +474,7 @@ function updateCalendarWeek() {
 
     // Create a click catcher for the column
     col.addEventListener('click', (e) => {
+      if (isReadOnly) return;
       // Ignore click if user clicked a lesson card
       if (e.target.closest('.lesson-card')) return;
       
@@ -571,6 +600,7 @@ function createLessonCardElement(lesson, isMonthMode = false) {
   // Edit on Click
   card.addEventListener('click', (e) => {
     e.stopPropagation(); // Avoid triggering column/cell click
+    if (isReadOnly) return;
     openLessonModalForEdit(lesson);
   });
 
@@ -1028,7 +1058,7 @@ function setupEventListeners() {
   }
 
   // Handle Lesson Form Submit
-  lessonForm.addEventListener('submit', (e) => {
+  lessonForm.addEventListener('submit', async (e) => {
     e.preventDefault();
 
     const lessonId = lessonIdInput.value;
@@ -1085,7 +1115,7 @@ function setupEventListeners() {
 
       const idx = state.lessons.findIndex(l => l.id === lessonId);
       if (idx !== -1) {
-        state.lessons[idx] = {
+        const updatedLesson = {
           id: lessonId,
           studentId: studentId,
           studentName: student.name,
@@ -1096,7 +1126,18 @@ function setupEventListeners() {
           color: colorVal,
           memo: memoVal
         };
-        showToast('授業予定を更新しました。');
+
+        try {
+          const { error } = await supabaseClient.from('lessons').update(updatedLesson).eq('id', lessonId);
+          if (error) throw error;
+          
+          state.lessons[idx] = updatedLesson;
+          showToast('授業予定を更新しました。');
+        } catch (error) {
+          console.error(error);
+          showToast('更新に失敗しました', 'error');
+          return;
+        }
       }
     } else {
       // Create mode (Batch Dates validation & registration)
@@ -1120,44 +1161,58 @@ function setupEventListeners() {
       }
 
       // If all dates are valid, register them
-      state.selectedDates.forEach(dVal => {
-        const newLesson = {
-          id: generateUUID(),
-          studentId: studentId,
-          studentName: student.name,
-          date: dVal,
-          startTime: startTimeVal,
-          duration: durationVal,
-          endTime: endTimeVal,
-          color: colorVal,
-          memo: memoVal
-        };
-        state.lessons.push(newLesson);
-      });
-      showToast(`${state.selectedDates.length}件の授業予定を一括登録しました。`);
+      const newLessons = state.selectedDates.map(dVal => ({
+        id: generateUUID(),
+        studentId: studentId,
+        studentName: student.name,
+        date: dVal,
+        startTime: startTimeVal,
+        duration: durationVal,
+        endTime: endTimeVal,
+        color: colorVal,
+        memo: memoVal
+      }));
+
+      try {
+        const { error } = await supabaseClient.from('lessons').insert(newLessons);
+        if (error) throw error;
+
+        state.lessons.push(...newLessons);
+        showToast(`${state.selectedDates.length}件の授業予定を一括登録しました。`);
+      } catch (error) {
+        console.error(error);
+        showToast('登録に失敗しました', 'error');
+        return;
+      }
     }
 
-    saveLessonsToStorage();
     updateCalendar();
     closeLessonModal();
   });
 
   // Handle Delete Lesson
-  deleteLessonBtn.addEventListener('click', () => {
+  deleteLessonBtn.addEventListener('click', async () => {
     const id = lessonIdInput.value;
     if (!id) return;
 
     if (confirm('この授業予定を削除してもよろしいですか？')) {
-      state.lessons = state.lessons.filter(l => l.id !== id);
-      saveLessonsToStorage();
-      updateCalendar();
-      closeLessonModal();
-      showToast('授業予定を削除しました。');
+      try {
+        const { error } = await supabaseClient.from('lessons').delete().eq('id', id);
+        if (error) throw error;
+
+        state.lessons = state.lessons.filter(l => l.id !== id);
+        updateCalendar();
+        closeLessonModal();
+        showToast('授業予定を削除しました。');
+      } catch (error) {
+        console.error(error);
+        showToast('削除に失敗しました', 'error');
+      }
     }
   });
 
   // Handle Student Add inside Student modal
-  saveNewStudentBtn.addEventListener('click', () => {
+  saveNewStudentBtn.addEventListener('click', async () => {
     const name = newStudentNameInput.value.trim();
     if (!name) {
       showToast('生徒名を入力してください。', 'error');
@@ -1175,18 +1230,43 @@ function setupEventListeners() {
       name: name
     };
 
-    state.students.push(newStudent);
-    saveStudentsToStorage();
-    updateStudentDropdowns();
-    renderStudentList();
-    
-    newStudentNameInput.value = '';
-    showToast(`${name}さんを名簿に追加しました。`);
+    try {
+      const { error } = await supabaseClient.from('students').insert(newStudent);
+      if (error) throw error;
+
+      state.students.push(newStudent);
+      updateStudentDropdowns();
+      renderStudentList();
+      
+      newStudentNameInput.value = '';
+      showToast(`${name}さんを名簿に追加しました。`);
+    } catch (error) {
+      console.error(error);
+      showToast('生徒の追加に失敗しました', 'error');
+    }
   });
 
   newStudentNameInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
       saveNewStudentBtn.click();
+    }
+  });
+
+  // Mobile horizontal scroll sync for sticky time axis
+  weekViewPanel.addEventListener('scroll', (e) => {
+    if (state.currentView !== 'week') return;
+    const scrollLeft = e.target.scrollLeft;
+    
+    // Sync time zone cell in header
+    const tzCell = document.querySelector('.time-zone-cell');
+    if (tzCell) {
+      tzCell.style.transform = `translateX(${scrollLeft}px)`;
+    }
+    
+    // Sync time axis column in body
+    const timeAxis = document.getElementById('timeAxisCol');
+    if (timeAxis) {
+      timeAxis.style.transform = `translateX(${scrollLeft}px)`;
     }
   });
 }
