@@ -327,7 +327,9 @@ body {
   grid-template-columns: 80px repeat(7, 1fr);
   border-bottom: 1px solid var(--border-color);
   background-color: var(--bg-tertiary);
-  z-index: 5;
+  position: sticky;
+  top: 0;
+  z-index: 20;
 }
 
 .time-zone-cell {
@@ -338,8 +340,10 @@ body {
   font-size: 0.75rem;
   color: var(--text-muted);
   font-weight: 500;
-  position: relative;
-  z-index: 6;
+  position: sticky;
+  left: 0;
+  top: 0;
+  z-index: 30;
   background-color: var(--bg-tertiary);
 }
 
@@ -409,7 +413,6 @@ body {
 /* Scrollable Calendar Body */
 .calendar-scroll-area {
   flex: 1;
-  overflow-y: auto;
   position: relative;
 }
 
@@ -424,8 +427,9 @@ body {
   border-right: 1px solid var(--border-color);
   background-color: var(--bg-tertiary);
   user-select: none;
-  position: relative;
-  z-index: 5;
+  position: sticky;
+  left: 0;
+  z-index: 10;
 }
 
 .time-axis-cell {
@@ -1074,7 +1078,6 @@ body {
   
   .calendar-scroll-area {
     min-width: 640px;
-    overflow-y: auto;
   }
   
   /* Scrollbar styling for weekViewPanel */
@@ -1192,6 +1195,9 @@ body {
   grid-template-columns: repeat(7, 1fr);
   border-bottom: 1px solid var(--border-color);
   background-color: var(--bg-tertiary);
+  position: sticky;
+  top: 0;
+  z-index: 20;
 }
 
 .month-header-cell {
