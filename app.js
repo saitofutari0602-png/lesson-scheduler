@@ -4,23 +4,40 @@ const isReadOnly = window.FORCE_READONLY || urlParams.get('mode') === 'view' || 
 
 const SUPABASE_URL = 'https://bzobwzodgcfzaitgebya.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_sg24lQQkvMWmGvJKenCqtg_DcpiYw3P';
-const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const supabaseClient = window.supabase && typeof window.supabase.createClient === 'function'
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
+  : null;
 
 const START_HOUR = 12;
 const END_HOUR = 22;
 const HOURS_COUNT = END_HOUR - START_HOUR;
 const HOUR_HEIGHT = 80; // Must match CSS --hour-height
+const DRAG_SNAP_MINUTES = 30;
 
 // State variables
 let state = {
   currentDate: new Date(), // Represents the viewed week or month
   lessons: [],
   students: [],
+  memos: [], // <--- added for Supabase sync
   selectedStudentFilter: 'all',
   theme: 'light',
   currentView: 'month', // 'week' or 'month'
   selectedDates: [], // Array of YYYY-MM-DD strings for batch creation
   miniCalendarDate: new Date() // Month currently displayed in modal mini calendar
+};
+
+// Drag state
+const drag = {
+  active: false,
+  lessonId: null,
+  lessonIndex: -1,
+  startX: 0,
+  startY: 0,
+  offsetX: 0,
+  offsetY: 0,
+  ghost: null,
+  suppressClick: false
 };
 
 // DOM Elements
@@ -76,6 +93,17 @@ const saveNewStudentBtn = document.getElementById('saveNewStudentBtn');
 const closeStudentModalBtn = document.getElementById('closeStudentModalBtn');
 const closeStudentModalFooterBtn = document.getElementById('closeStudentModalFooterBtn');
 
+// Memo Panel elements
+const memoToggleBtn      = document.getElementById('memoToggleBtn');
+const memoPanelAside     = document.getElementById('memoPanelAside');
+const memoCloseBtn       = document.getElementById('memoCloseBtn');
+const keepInputCollapsed = document.getElementById('keepInputCollapsed');
+const keepInputExpanded  = document.getElementById('keepInputExpanded');
+const keepTextarea       = document.getElementById('keepTextarea');
+const keepCancelBtn      = document.getElementById('keepCancelBtn');
+const keepAddBtn         = document.getElementById('keepAddBtn');
+const keepMemoList       = document.getElementById('keepMemoList');
+
 // Helper: Parse time string "HH:MM" to minutes from 00:00
 function parseTimeToMinutes(timeStr) {
   const [hours, minutes] = timeStr.split(':').map(Number);
@@ -87,6 +115,33 @@ function formatMinutesToTime(totalMinutes) {
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function roundToIncrement(value, increment) {
+  return Math.round(value / increment) * increment;
+}
+
+function clearDragHighlights() {
+  document.querySelectorAll('.day-column.drag-over, .day-column.droppable, .month-day-cell.drag-over, .month-day-cell.droppable')
+    .forEach(el => el.classList.remove('drag-over', 'droppable'));
+}
+
+function getDropTargetFromPoint(clientX, clientY) {
+  const el = document.elementFromPoint(clientX, clientY);
+  return el ? el.closest('.day-column, .month-day-cell') : null;
+}
+
+function getSnappedStartTimeForWeekDrop(column, clientY, offsetY, duration) {
+  const colRect = column.getBoundingClientRect();
+  const dropY = clientY - colRect.top - offsetY;
+  const rawMinutes = Math.max(0, (dropY / HOUR_HEIGHT) * 60);
+  const snapped = roundToIncrement(START_HOUR * 60 + rawMinutes, DRAG_SNAP_MINUTES);
+  const latestStart = Math.max(START_HOUR * 60, END_HOUR * 60 - duration);
+  return formatMinutesToTime(clamp(snapped, START_HOUR * 60, latestStart));
 }
 
 // Helper: Get Start of Week (Sunday) for a given date
@@ -110,6 +165,47 @@ function formatDateString(d) {
 // Helper: Generate UUID for students/lessons
 function generateUUID() {
   return 'id-' + Math.random().toString(36).substr(2, 9) + '-' + Date.now().toString(36);
+}
+
+function getDefaultStudents() {
+  return [
+    { id: 'st-1', name: '平山 美晴' },
+    { id: 'st-2', name: '山中 泰成' },
+    { id: 'st-3', name: '杉本 守' },
+    { id: 'st-4', name: '松本 泰吾' },
+    { id: 'st-5', name: '清村 優子' },
+    { id: 'st-6', name: '内山 光莉' },
+    { id: 'st-7', name: '徳丸 幸樹' },
+    { id: 'st-8', name: '永井 桔平' }
+  ];
+}
+
+function readJsonFromStorage(key, fallback) {
+  const rawValue = localStorage.getItem(key);
+  if (!rawValue) return fallback;
+
+  try {
+    return JSON.parse(rawValue);
+  } catch (error) {
+    console.warn(`Invalid localStorage data for ${key}`, error);
+    return fallback;
+  }
+}
+
+function saveLessonsToStorage() {
+  localStorage.setItem('lesson_scheduler_lessons', JSON.stringify(state.lessons));
+}
+
+function saveStudentsToStorage() {
+  localStorage.setItem('lesson_scheduler_students', JSON.stringify(state.students));
+}
+
+function loadStateFromLocalStorage() {
+  state.lessons = readJsonFromStorage('lesson_scheduler_lessons', null) || getDefaultLessons();
+  state.students = readJsonFromStorage('lesson_scheduler_students', null) || getDefaultStudents();
+  state.memos = readJsonFromStorage('lesson_scheduler_memos_keep', []);
+  saveLessonsToStorage();
+  saveStudentsToStorage();
 }
 
 // Initialize Application
@@ -142,10 +238,179 @@ async function init() {
 
   // Setup Event Listeners
   setupEventListeners();
+
+  // Setup Memo panel
+  setupMemo();
   
   // Set CSS property for hours count
   document.documentElement.style.setProperty('--hours-count', HOURS_COUNT);
 }
+
+// ─── Memo Sidebar ────────────────────────────────────────────────────────────
+const MEMO_STORAGE_KEY = 'lesson_scheduler_memos_keep';
+
+function escapeHtml(unsafe) {
+  if (!unsafe) return '';
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function setupMemo() {
+  if (!memoToggleBtn || !memoPanelAside) return; // Not on admin page
+
+  // Restore open/closed state
+  const memoOpen = localStorage.getItem('lesson_scheduler_memo_open') === 'true';
+  if (memoOpen) {
+    memoPanelAside.classList.add('is-open');
+    memoToggleBtn.classList.add('active');
+  }
+
+  // Toggle button opens/closes the panel
+  memoToggleBtn.addEventListener('click', () => {
+    const isOpen = memoPanelAside.classList.toggle('is-open');
+    memoToggleBtn.classList.toggle('active', isOpen);
+    localStorage.setItem('lesson_scheduler_memo_open', isOpen);
+  });
+
+  // Close button inside the panel
+  if (memoCloseBtn) {
+    memoCloseBtn.addEventListener('click', () => {
+      memoPanelAside.classList.remove('is-open');
+      memoToggleBtn.classList.remove('active');
+      localStorage.setItem('lesson_scheduler_memo_open', 'false');
+    });
+  }
+
+  // If user has old text memo from before, migrate it into a card
+  const oldMemoText = localStorage.getItem('lesson_scheduler_memo');
+  if (oldMemoText && oldMemoText.trim()) {
+    const migratedMemo = {
+      id: 'memo-migrated-' + Date.now(),
+      content: oldMemoText.trim(),
+      isPinned: false,
+      createdAt: Date.now()
+    };
+    state.memos.push(migratedMemo);
+    localStorage.removeItem('lesson_scheduler_memo');
+    saveMemosAsync(migratedMemo, 'insert');
+  }
+
+  async function saveMemosAsync(memoObj, action) {
+    if (supabaseClient) {
+      try {
+        if (action === 'insert') {
+          await supabaseClient.from('memos').insert(memoObj);
+        } else if (action === 'update') {
+          await supabaseClient.from('memos').update(memoObj).eq('id', memoObj.id);
+        } else if (action === 'delete') {
+          await supabaseClient.from('memos').delete().eq('id', memoObj.id);
+        }
+      } catch (error) {
+        console.error('Memo sync error:', error);
+      }
+    }
+    // Update local fallback
+    localStorage.setItem('lesson_scheduler_memos_keep', JSON.stringify(state.memos));
+  }
+
+  function renderMemos() {
+    if (!keepMemoList) return;
+    keepMemoList.innerHTML = '';
+    
+    // Sort: pinned first, then by createdAt desc
+    const sorted = [...state.memos].sort((a, b) => {
+      if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+      return b.createdAt - a.createdAt;
+    });
+
+    sorted.forEach(memo => {
+      const card = document.createElement('div');
+      card.className = `keep-card ${memo.isPinned ? 'pinned' : ''}`;
+      
+      // Parse content for pseudo-title (first line bold if multi-line)
+      const lines = memo.content.trim().split('\n');
+      let bodyHtml = '';
+      if (lines.length > 1) {
+        bodyHtml = `<b>${escapeHtml(lines[0])}</b>${escapeHtml(lines.slice(1).join('\n'))}`;
+      } else {
+        bodyHtml = escapeHtml(lines[0]);
+      }
+      
+      card.innerHTML = `
+        <div class="keep-card-body">${bodyHtml}</div>
+        <button class="keep-card-pin" aria-label="ピン留め" data-id="${memo.id}">
+          <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M16,12V4H17V2H7V4H8V12L6,14V16H11.2V22H12.8V16H18V14L16,12Z" /></svg>
+        </button>
+        <button class="keep-card-delete" aria-label="削除" data-id="${memo.id}">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+        </button>
+      `;
+
+      card.querySelector('.keep-card-pin').addEventListener('click', (e) => {
+        e.stopPropagation();
+        memo.isPinned = !memo.isPinned;
+        saveMemosAsync(memo, 'update');
+        renderMemos();
+      });
+
+      card.querySelector('.keep-card-delete').addEventListener('click', (e) => {
+        e.stopPropagation();
+        state.memos = state.memos.filter(m => m.id !== memo.id);
+        saveMemosAsync(memo, 'delete');
+        renderMemos();
+      });
+
+      keepMemoList.appendChild(card);
+    });
+  }
+
+  // Input area toggling
+  if (keepInputCollapsed && keepInputExpanded) {
+    keepInputCollapsed.addEventListener('click', () => {
+      keepInputCollapsed.style.display = 'none';
+      keepInputExpanded.style.display = 'flex';
+      keepTextarea.focus();
+    });
+
+    keepCancelBtn.addEventListener('click', () => {
+      keepTextarea.value = '';
+      keepInputExpanded.style.display = 'none';
+      keepInputCollapsed.style.display = 'flex';
+    });
+
+    keepAddBtn.addEventListener('click', () => {
+      const text = keepTextarea.value.trim();
+      if (!text) {
+        keepTextarea.value = '';
+        keepInputExpanded.style.display = 'none';
+        keepInputCollapsed.style.display = 'flex';
+        return;
+      }
+      
+      const newMemo = {
+        id: 'memo-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+        content: text,
+        isPinned: false,
+        createdAt: Date.now()
+      };
+      
+      state.memos.unshift(newMemo);
+      saveMemosAsync(newMemo, 'insert');
+      renderMemos();
+      
+      keepTextarea.value = '';
+      keepInputExpanded.style.display = 'none';
+      keepInputCollapsed.style.display = 'flex';
+    });
+  }
+
+  renderMemos();
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 // Default lessons from user request (June 2026)
 function getDefaultLessons() {
@@ -207,6 +472,12 @@ async function loadStateFromStorage() {
   }
   applyTheme();
 
+  if (!supabaseClient) {
+    loadStateFromLocalStorage();
+    showToast('オンライン同期を使えないため、この端末に保存します。', 'warning');
+    return;
+  }
+
   try {
     // Fetch students
     const { data: studentsData, error: studentsError } = await supabaseClient.from('students').select('*');
@@ -216,16 +487,7 @@ async function loadStateFromStorage() {
       state.students = studentsData;
     } else {
       // Initial standard student list
-      state.students = [
-        { id: 'st-1', name: '平山 美晴' },
-        { id: 'st-2', name: '山中 泰成' },
-        { id: 'st-3', name: '杉本 守' },
-        { id: 'st-4', name: '松本 泰吾' },
-        { id: 'st-5', name: '清村 優子' },
-        { id: 'st-6', name: '内山 光莉' },
-        { id: 'st-7', name: '徳丸 幸樹' },
-        { id: 'st-8', name: '永井 桔平' }
-      ];
+      state.students = getDefaultStudents();
       await supabaseClient.from('students').insert(state.students);
     }
 
@@ -239,9 +501,24 @@ async function loadStateFromStorage() {
       state.lessons = getDefaultLessons();
       await supabaseClient.from('lessons').insert(state.lessons);
     }
+
+    // Fetch memos
+    const { data: memosData, error: memosError } = await supabaseClient.from('memos').select('*');
+    if (memosError) throw memosError;
+
+    if (memosData) {
+      state.memos = memosData;
+    } else {
+      state.memos = [];
+    }
+
+    saveLessonsToStorage();
+    saveStudentsToStorage();
+    localStorage.setItem('lesson_scheduler_memos_keep', JSON.stringify(state.memos));
   } catch (error) {
     console.error('Error loading data from Supabase:', error);
-    showToast('データの読み込みに失敗しました', 'error');
+    loadStateFromLocalStorage();
+    showToast('オンライン同期に接続できないため、この端末の保存データで表示します。', 'warning');
   }
 }
 
@@ -264,27 +541,22 @@ function applyTheme() {
 // Generate Demo Data
 async function loadDemoData() {
   // Reset student list to the 8 names
-  state.students = [
-    { id: 'st-1', name: '平山 美晴' },
-    { id: 'st-2', name: '山中 泰成' },
-    { id: 'st-3', name: '杉本 守' },
-    { id: 'st-4', name: '松本 泰吾' },
-    { id: 'st-5', name: '清村 優子' },
-    { id: 'st-6', name: '内山 光莉' },
-    { id: 'st-7', name: '徳丸 幸樹' },
-    { id: 'st-8', name: '永井 桔平' }
-  ];
-
+  state.students = getDefaultStudents();
   state.lessons = getDefaultLessons();
 
   try {
-    // Delete all existing data
-    await supabaseClient.from('lessons').delete().neq('id', 'dummy');
-    await supabaseClient.from('students').delete().neq('id', 'dummy');
+    if (supabaseClient) {
+      // Delete all existing data
+      await supabaseClient.from('lessons').delete().neq('id', 'dummy');
+      await supabaseClient.from('students').delete().neq('id', 'dummy');
 
-    // Insert demo data
-    await supabaseClient.from('students').insert(state.students);
-    await supabaseClient.from('lessons').insert(state.lessons);
+      // Insert demo data
+      await supabaseClient.from('students').insert(state.students);
+      await supabaseClient.from('lessons').insert(state.lessons);
+    }
+
+    saveStudentsToStorage();
+    saveLessonsToStorage();
 
     updateStudentDropdowns();
     updateCalendar();
@@ -353,6 +625,7 @@ function updateCalendarMonth() {
 
     const cell = document.createElement('div');
     cell.className = `month-day-cell ${isToday ? 'is-today' : ''} ${!isCurrentMonth ? 'other-month' : ''}`;
+    cell.dataset.date = dateStr;
     
     // Day header (date number)
     const header = document.createElement('div');
@@ -394,6 +667,33 @@ function updateCalendarMonth() {
       if (e.target.closest('.lesson-card')) return;
       openLessonModalForCreate(dateStr, '16:00');
     });
+
+    if (!isReadOnly) {
+      cell.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        cell.classList.add('drag-over');
+      });
+
+      cell.addEventListener('dragleave', () => {
+        cell.classList.remove('drag-over');
+      });
+
+      cell.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        cell.classList.remove('drag-over');
+        
+        if (!drag.lessonId) return;
+
+        const lessonIndex = state.lessons.findIndex(l => l.id === drag.lessonId);
+        if (lessonIndex === -1) return;
+        
+        const lesson = state.lessons[lessonIndex];
+        const newDateStr = dateStr;
+
+        await moveLessonToSlot(lesson, newDateStr, lesson.startTime);
+      });
+    }
 
     monthDaysGrid.appendChild(cell);
   }
@@ -597,12 +897,138 @@ function createLessonCardElement(lesson, isMonthMode = false) {
 
   card.appendChild(durationBadge);
 
-  // Edit on Click
+  // Click to edit
   card.addEventListener('click', (e) => {
-    e.stopPropagation(); // Avoid triggering column/cell click
+    e.stopPropagation();
     if (isReadOnly) return;
+    if (drag.active || drag.suppressClick) {
+      drag.suppressClick = false;
+      return;
+    }
     openLessonModalForEdit(lesson);
   });
+
+  // Pointer-event based drag (admin only)
+  if (!isReadOnly) {
+    card.style.cursor = 'grab';
+    card.draggable = false;
+
+    card.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+
+      const cardRect = card.getBoundingClientRect();
+      drag.lessonId   = lesson.id;
+      drag.lessonIndex = state.lessons.findIndex(l => l.id === lesson.id);
+      drag.offsetX    = e.clientX - cardRect.left;
+      drag.offsetY    = e.clientY - cardRect.top;
+      drag.startX     = e.clientX;
+      drag.startY     = e.clientY;
+      drag.active     = false;
+      drag.ghost      = null;
+
+      // Capture all future pointer events on this element
+      card.setPointerCapture(e.pointerId);
+    });
+
+    card.addEventListener('pointermove', (e) => {
+      if (drag.lessonId !== lesson.id) return;
+
+      const dx = e.clientX - drag.startX;
+      const dy = e.clientY - drag.startY;
+
+      // Ignore tiny movements (treat as a click)
+      if (!drag.active && Math.hypot(dx, dy) < 6) return;
+
+      if (!drag.active) {
+        // Real drag started
+        drag.active = true;
+        card.classList.add('dragging');
+        card.style.opacity = '0.35';
+        card.style.cursor  = 'grabbing';
+
+        // Create ghost that follows the cursor
+        const ghost = card.cloneNode(true);
+        ghost.id = 'drag-ghost';
+        const cardRect = card.getBoundingClientRect();
+        ghost.style.cssText = [
+          'position:fixed',
+          'pointer-events:none',
+          'z-index:9999',
+          `width:${cardRect.width}px`,
+          `height:${cardRect.height}px`,
+          'opacity:0.9',
+          'box-shadow:0 10px 30px rgba(0,0,0,0.3)',
+          'border-radius:6px',
+          'transition:none',
+          'transform:scale(1.04)'
+        ].join(';');
+        document.body.appendChild(ghost);
+        drag.ghost = ghost;
+
+        document.querySelectorAll('.day-column, .month-day-cell').forEach(c => c.classList.add('droppable'));
+      }
+
+      // Move ghost with cursor
+      drag.ghost.style.left = (e.clientX - drag.offsetX) + 'px';
+      drag.ghost.style.top  = (e.clientY - drag.offsetY) + 'px';
+
+      // Highlight hovered column
+      drag.ghost.style.display = 'none'; // hide so elementFromPoint sees through it
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      drag.ghost.style.display = '';
+
+      document.querySelectorAll('.day-column.drag-over, .month-day-cell.drag-over').forEach(c => c.classList.remove('drag-over'));
+      const col = el ? el.closest('.day-column, .month-day-cell') : null;
+      if (col) col.classList.add('drag-over');
+    });
+
+    card.addEventListener('pointerup', async (e) => {
+      if (drag.lessonId !== lesson.id) return;
+
+      // Cleanup visual state
+      if (drag.ghost) { drag.ghost.remove(); drag.ghost = null; }
+      card.classList.remove('dragging');
+      card.style.opacity = '';
+      card.style.cursor  = 'grab';
+      clearDragHighlights();
+
+      const wasActive = drag.active;
+      if (wasActive) {
+        drag.suppressClick = true;
+        setTimeout(() => {
+          drag.suppressClick = false;
+        }, 250);
+      }
+      drag.active   = false;
+      drag.lessonId = null;
+
+      if (!wasActive) return; // Was just a click, not a drag
+
+      const dropTarget = getDropTargetFromPoint(e.clientX, e.clientY);
+      if (!dropTarget) return;
+
+      const lessonData = state.lessons[drag.lessonIndex];
+      const newDateStr = dropTarget.dataset.date;
+      if (!lessonData || !newDateStr) return;
+
+      const newStartTime = dropTarget.classList.contains('day-column')
+        ? getSnappedStartTimeForWeekDrop(dropTarget, e.clientY, drag.offsetY, lessonData.duration)
+        : lessonData.startTime;
+
+      await moveLessonToSlot(lessonData, newDateStr, newStartTime);
+      return;
+    });
+
+    card.addEventListener('pointercancel', () => {
+      if (drag.ghost) { drag.ghost.remove(); drag.ghost = null; }
+      card.classList.remove('dragging');
+      card.style.opacity = '';
+      card.style.cursor  = 'grab';
+      drag.active   = false;
+      drag.lessonId = null;
+      clearDragHighlights();
+    });
+  }
 
   return card;
 }
@@ -714,12 +1140,21 @@ function renderStudentList() {
   });
 }
 
-function deleteStudent(id) {
+async function deleteStudent(id) {
   // Confirm deletion
   const student = state.students.find(st => st.id === id);
   if (!student) return;
 
   if (confirm(`${student.name}さんを削除してもよろしいですか？\n※登録済みの授業データはそのまま残ります。`)) {
+    if (supabaseClient) {
+      const { error } = await supabaseClient.from('students').delete().eq('id', id);
+      if (error) {
+        console.error(error);
+        showToast('生徒の削除に失敗しました', 'error');
+        return;
+      }
+    }
+
     state.students = state.students.filter(st => st.id !== id);
     saveStudentsToStorage();
     updateStudentDropdowns();
@@ -927,6 +1362,55 @@ function checkScheduleConflict(currentLessonId, date, startTime, duration) {
   return { conflict: false };
 }
 
+async function moveLessonToSlot(lesson, newDate, newStartTime) {
+  const newStartMinutes = parseTimeToMinutes(newStartTime);
+  const newEndMinutes = newStartMinutes + lesson.duration;
+
+  if (newStartMinutes < START_HOUR * 60 || newEndMinutes > END_HOUR * 60) {
+    showToast(`授業時間は ${START_HOUR}:00 から ${END_HOUR}:00 の範囲で移動してください。`, 'error');
+    return false;
+  }
+
+  if (lesson.date === newDate && lesson.startTime === newStartTime) {
+    return false;
+  }
+
+  const conflictCheck = checkScheduleConflict(lesson.id, newDate, newStartTime, lesson.duration);
+  if (conflictCheck.conflict) {
+    showToast(
+      `移動できません。${conflictCheck.lesson.studentName}さんの授業（${conflictCheck.lesson.startTime}-${conflictCheck.lesson.endTime}）と重なります。`,
+      'error'
+    );
+    return false;
+  }
+
+  const oldLesson = { ...lesson };
+  const updatedFields = {
+    date: newDate,
+    startTime: newStartTime,
+    endTime: formatMinutesToTime(newEndMinutes)
+  };
+
+  Object.assign(lesson, updatedFields);
+  updateCalendar();
+
+  try {
+    if (supabaseClient) {
+      const { error } = await supabaseClient.from('lessons').update(updatedFields).eq('id', lesson.id);
+      if (error) throw error;
+    }
+    saveLessonsToStorage();
+    showToast('授業を移動しました。', 'success');
+    return true;
+  } catch (error) {
+    console.error(error);
+    Object.assign(lesson, oldLesson);
+    updateCalendar();
+    showToast('移動の保存に失敗しました。', 'error');
+    return false;
+  }
+}
+
 // Toast Notifications System
 function showToast(message, type = 'success') {
   const toast = document.createElement('div');
@@ -1128,10 +1612,13 @@ function setupEventListeners() {
         };
 
         try {
-          const { error } = await supabaseClient.from('lessons').update(updatedLesson).eq('id', lessonId);
-          if (error) throw error;
+          if (supabaseClient) {
+            const { error } = await supabaseClient.from('lessons').update(updatedLesson).eq('id', lessonId);
+            if (error) throw error;
+          }
           
           state.lessons[idx] = updatedLesson;
+          saveLessonsToStorage();
           showToast('授業予定を更新しました。');
         } catch (error) {
           console.error(error);
@@ -1174,10 +1661,13 @@ function setupEventListeners() {
       }));
 
       try {
-        const { error } = await supabaseClient.from('lessons').insert(newLessons);
-        if (error) throw error;
+        if (supabaseClient) {
+          const { error } = await supabaseClient.from('lessons').insert(newLessons);
+          if (error) throw error;
+        }
 
         state.lessons.push(...newLessons);
+        saveLessonsToStorage();
         showToast(`${state.selectedDates.length}件の授業予定を一括登録しました。`);
       } catch (error) {
         console.error(error);
@@ -1197,10 +1687,13 @@ function setupEventListeners() {
 
     if (confirm('この授業予定を削除してもよろしいですか？')) {
       try {
-        const { error } = await supabaseClient.from('lessons').delete().eq('id', id);
-        if (error) throw error;
+        if (supabaseClient) {
+          const { error } = await supabaseClient.from('lessons').delete().eq('id', id);
+          if (error) throw error;
+        }
 
         state.lessons = state.lessons.filter(l => l.id !== id);
+        saveLessonsToStorage();
         updateCalendar();
         closeLessonModal();
         showToast('授業予定を削除しました。');
@@ -1231,10 +1724,13 @@ function setupEventListeners() {
     };
 
     try {
-      const { error } = await supabaseClient.from('students').insert(newStudent);
-      if (error) throw error;
+      if (supabaseClient) {
+        const { error } = await supabaseClient.from('students').insert(newStudent);
+        if (error) throw error;
+      }
 
       state.students.push(newStudent);
+      saveStudentsToStorage();
       updateStudentDropdowns();
       renderStudentList();
       
