@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>授業スケジュール表管理ツール</title>
   <meta name="description" content="Googleカレンダー風の洗練されたデザインで、授業時間を60分・90分・120分から選んで簡単スケジュール登録。生徒ごとの色分け、重複チェック、ダークモード対応。">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=20260609-memo">
 </head>
 <body>
 
@@ -48,6 +48,11 @@
         <span>生徒名簿</span>
       </button>
 
+      <button id="memoToggleBtn" class="btn btn-secondary" aria-label="メモ">
+        <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+        <span>メモ</span>
+      </button>
+
       <button id="addLessonBtn" class="btn btn-primary">
         <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
         <span>授業を追加</span>
@@ -75,6 +80,9 @@
       </button>
     </div>
   </div>
+
+  <!-- Page body: Calendar + Memo Sidebar -->
+  <div class="page-body">
 
   <!-- Main Calendar View -->
   <main class="calendar-outer-container">
@@ -127,6 +135,43 @@
 
     </div>
   </main>
+
+  <!-- Memo Sidebar -->
+  <aside id="memoPanelAside" class="memo-aside keep-theme" aria-label="メモ">
+    <div class="keep-header">
+      <div class="keep-title">
+        <span class="keep-title-main">KEEP</span><br>
+        <span class="keep-title-sub">メモ</span>
+      </div>
+      <button id="memoCloseBtn" class="keep-icon-btn" aria-label="閉じる">
+        <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    
+    <div class="keep-body">
+      <!-- Input Area -->
+      <div class="keep-input-container">
+        <div id="keepInputCollapsed" class="keep-input-box">
+          <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="#fbbc04"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+          <span class="keep-placeholder">メモを入力...</span>
+        </div>
+        <div id="keepInputExpanded" class="keep-input-expanded" style="display: none;">
+          <textarea id="keepTextarea" class="keep-textarea" placeholder="メモを入力..." rows="3"></textarea>
+          <div class="keep-actions">
+            <button id="keepCancelBtn" class="keep-text-btn">閉じる</button>
+            <button id="keepAddBtn" class="keep-text-btn keep-add-btn">追加</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Memo List -->
+      <div id="keepMemoList" class="keep-memo-list">
+        <!-- Rendered via JS -->
+      </div>
+    </div>
+  </aside>
+
+  </div><!-- /.page-body -->
 
   <!-- Toast Notification System -->
   <div id="toastContainer" class="toast-container"></div>
@@ -287,6 +332,6 @@
 
   <!-- JS Logic Import -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=20260607-dnd2"></script>
 </body>
 </html>
