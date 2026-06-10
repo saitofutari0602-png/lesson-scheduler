@@ -1,3 +1,11 @@
+// Global Error Handler for remote debugging
+window.onerror = function(message, source, lineno, colno, error) {
+  const errorMsg = 'JS Error: ' + message + '\nLine: ' + lineno + '\nSource: ' + source;
+  console.error(errorMsg, error);
+  alert(errorMsg);
+  return false;
+};
+
 // App Configuration
 const urlParams = new URLSearchParams(window.location.search);
 const isReadOnly = window.FORCE_READONLY || urlParams.get('mode') === 'view' || urlParams.get('view') === 'readonly';
@@ -20,6 +28,7 @@ let state = {
   lessons: [],
   students: [],
   memos: [], // <--- added for Supabase sync
+  notices: [], // <--- added for Notice Board sync
   selectedStudentFilter: 'all',
   theme: 'light',
   currentView: 'month', // 'week' or 'month'
@@ -65,6 +74,7 @@ const toastContainer = document.getElementById('toastContainer');
 
 // Modals
 const lessonModal = document.getElementById('lessonModal');
+const modalTitle = document.getElementById('modalTitle');
 const lessonForm = document.getElementById('lessonForm');
 const lessonIdInput = document.getElementById('lessonId');
 const lessonStudentInput = document.getElementById('lessonStudent');
@@ -104,6 +114,15 @@ const keepCancelBtn      = document.getElementById('keepCancelBtn');
 const keepAddBtn         = document.getElementById('keepAddBtn');
 const keepMemoList       = document.getElementById('keepMemoList');
 
+// Notice Board elements
+const noticeBoardBtn = document.getElementById('noticeBoardBtn');
+const noticeModal = document.getElementById('noticeModal');
+const closeNoticeModalBtn = document.getElementById('closeNoticeModalBtn');
+const closeNoticeModalFooterBtn = document.getElementById('closeNoticeModalFooterBtn');
+const addNoticeContainer = document.getElementById('addNoticeContainer');
+const newNoticeText = document.getElementById('newNoticeText');
+const submitNoticeBtn = document.getElementById('submitNoticeBtn');
+const noticeList = document.getElementById('noticeList');
 // Helper: Parse time string "HH:MM" to minutes from 00:00
 function parseTimeToMinutes(timeStr) {
   const [hours, minutes] = timeStr.split(':').map(Number);
@@ -204,46 +223,217 @@ function loadStateFromLocalStorage() {
   state.lessons = readJsonFromStorage('lesson_scheduler_lessons', null) || getDefaultLessons();
   state.students = readJsonFromStorage('lesson_scheduler_students', null) || getDefaultStudents();
   state.memos = readJsonFromStorage('lesson_scheduler_memos_keep', []);
+  state.notices = readJsonFromStorage('lesson_scheduler_notices', []);
   saveLessonsToStorage();
   saveStudentsToStorage();
 }
 
 // Initialize Application
 async function init() {
+  console.log('App initialization started...');
+  
   // Apply Read-Only Mode UI changes
-  if (isReadOnly) {
-    if (addLessonBtn) addLessonBtn.style.display = 'none';
-    if (manageStudentsBtn) manageStudentsBtn.style.display = 'none';
-    if (resetDemoDataBtn) resetDemoDataBtn.style.display = 'none';
+  try {
+    if (isReadOnly) {
+      if (addLessonBtn) addLessonBtn.style.display = 'none';
+      if (manageStudentsBtn) manageStudentsBtn.style.display = 'none';
+      if (resetDemoDataBtn) resetDemoDataBtn.style.display = 'none';
+    }
+  } catch (e) {
+    console.error('Error in Read-Only UI layout:', e);
   }
 
   // Load State from LocalStorage and Supabase
-  await loadStateFromStorage();
+  try {
+    await loadStateFromStorage();
+  } catch (e) {
+    console.error('Error loading state:', e);
+  }
 
   // Draw static grids
-  renderTimeAxis();
+  try {
+    renderTimeAxis();
+  } catch (e) {
+    console.error('Error rendering time axis:', e);
+  }
 
   // Render Dynamic Calendar
-  updateCalendar();
+  try {
+    updateCalendar();
+  } catch (e) {
+    console.error('Error updating calendar:', e);
+  }
 
   // Populate Student lists in forms
-  updateStudentDropdowns();
+  try {
+    updateStudentDropdowns();
+  } catch (e) {
+    console.error('Error updating student dropdowns:', e);
+  }
 
   // Populate Start Time dropdown options
-  populateStartTimeDropdown();
+  try {
+    populateStartTimeDropdown();
+  } catch (e) {
+    console.error('Error populating start time dropdown:', e);
+  }
 
   // Setup Live Time Line
-  setInterval(updateCurrentTimeIndicator, 60000); // Update every minute
-  updateCurrentTimeIndicator();
+  try {
+    setInterval(updateCurrentTimeIndicator, 60000); // Update every minute
+    updateCurrentTimeIndicator();
+  } catch (e) {
+    console.error('Error updating current time indicator:', e);
+  }
 
   // Setup Event Listeners
-  setupEventListeners();
+  try {
+    setupEventListeners();
+  } catch (e) {
+    console.error('Error in setupEventListeners:', e);
+  }
 
   // Setup Memo panel
-  setupMemo();
+  try {
+    setupMemo();
+  } catch (e) {
+    console.error('Error setting up Memo:', e);
+  }
+  
+  // Setup Notice Board
+  try {
+    setupNoticeBoard();
+  } catch (e) {
+    console.error('Error setting up Notice Board:', e);
+  }
   
   // Set CSS property for hours count
-  document.documentElement.style.setProperty('--hours-count', HOURS_COUNT);
+  try {
+    document.documentElement.style.setProperty('--hours-count', HOURS_COUNT);
+  } catch (e) {
+    console.error('Error setting CSS hours count:', e);
+  }
+
+  console.log('App initialization completed.');
+}
+
+// ─── Notice Board ────────────────────────────────────────────────────────────
+
+function setupNoticeBoard() {
+  if (!noticeBoardBtn) return; // Feature might not be in all pages
+
+  // Modal display toggles
+  noticeBoardBtn.addEventListener('click', () => {
+    renderNotices();
+    if (noticeModal) noticeModal.style.display = 'flex';
+  });
+
+  const closeModal = () => {
+    if (noticeModal) noticeModal.style.display = 'none';
+  };
+
+  if (closeNoticeModalBtn) closeNoticeModalBtn.addEventListener('click', closeModal);
+  if (closeNoticeModalFooterBtn) closeNoticeModalFooterBtn.addEventListener('click', closeModal);
+  if (noticeModal) {
+    noticeModal.addEventListener('click', (e) => {
+      if (e.target === noticeModal) closeModal();
+    });
+  }
+
+  // Admin vs Read-Only View
+  if (isReadOnly) {
+    if (addNoticeContainer) addNoticeContainer.style.display = 'none';
+  } else {
+    if (addNoticeContainer) addNoticeContainer.style.display = 'flex';
+  }
+
+  // Submit Notice
+  if (submitNoticeBtn && newNoticeText) {
+    submitNoticeBtn.addEventListener('click', () => {
+      const text = newNoticeText.value.trim();
+      if (!text) return;
+
+      const newNotice = {
+        id: 'notice-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+        content: text,
+        createdAt: Date.now()
+      };
+
+      state.notices.unshift(newNotice);
+      saveNoticesAsync(newNotice, 'insert');
+      newNoticeText.value = '';
+      renderNotices();
+    });
+  }
+}
+
+async function saveNoticesAsync(noticeObj, action) {
+  if (supabaseClient) {
+    try {
+      if (action === 'insert') {
+        await supabaseClient.from('notices').insert(noticeObj);
+      } else if (action === 'delete') {
+        await supabaseClient.from('notices').delete().eq('id', noticeObj.id);
+      }
+    } catch (error) {
+      console.error('Notice sync error:', error);
+    }
+  }
+  localStorage.setItem('lesson_scheduler_notices', JSON.stringify(state.notices));
+}
+
+function renderNotices() {
+  if (!noticeList) return;
+  noticeList.innerHTML = '';
+  
+  const sorted = [...(state.notices || [])].sort((a, b) => {
+    const timeA = (typeof a.createdAt === 'number' || /^\d+$/.test(String(a.createdAt))) ? Number(a.createdAt) : new Date(a.createdAt).getTime();
+    const timeB = (typeof b.createdAt === 'number' || /^\d+$/.test(String(b.createdAt))) ? Number(b.createdAt) : new Date(b.createdAt).getTime();
+    return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
+  });
+
+  if (sorted.length === 0) {
+    noticeList.innerHTML = '<div style="color:var(--text-secondary); text-align:center; padding: 2rem;">連絡事項はありません。</div>';
+    return;
+  }
+
+  sorted.forEach(notice => {
+    const item = document.createElement('div');
+    item.className = 'notice-item';
+    
+    const dateObj = new Date((typeof notice.createdAt === 'number' || /^\d+$/.test(String(notice.createdAt))) ? Number(notice.createdAt) : notice.createdAt);
+    const dateStr = isNaN(dateObj.getTime()) ? '日付不明' : `${dateObj.getFullYear()}/${String(dateObj.getMonth()+1).padStart(2, '0')}/${String(dateObj.getDate()).padStart(2, '0')} ${String(dateObj.getHours()).padStart(2, '0')}:${String(dateObj.getMinutes()).padStart(2, '0')}`;
+
+    let deleteBtnHtml = '';
+    if (!isReadOnly) {
+      deleteBtnHtml = `
+        <button class="notice-delete-btn" aria-label="削除" data-id="${notice.id}">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+        </button>
+      `;
+    }
+
+    item.innerHTML = `
+      <div class="notice-content">${escapeHtml(notice.content)}</div>
+      <div class="notice-meta">${dateStr}</div>
+      ${deleteBtnHtml}
+    `;
+
+    if (!isReadOnly) {
+      const delBtn = item.querySelector('.notice-delete-btn');
+      if (delBtn) {
+        delBtn.addEventListener('click', (e) => {
+          if (confirm('この連絡事項を削除してもよろしいですか？')) {
+            state.notices = state.notices.filter(n => n.id !== notice.id);
+            saveNoticesAsync(notice, 'delete');
+            renderNotices();
+          }
+        });
+      }
+    }
+
+    noticeList.appendChild(item);
+  });
 }
 
 // ─── Memo Sidebar ────────────────────────────────────────────────────────────
@@ -512,9 +702,20 @@ async function loadStateFromStorage() {
       state.memos = [];
     }
 
+    // Fetch notices
+    const { data: noticesData, error: noticesError } = await supabaseClient.from('notices').select('*');
+    if (noticesError) throw noticesError;
+
+    if (noticesData) {
+      state.notices = noticesData;
+    } else {
+      state.notices = [];
+    }
+
     saveLessonsToStorage();
     saveStudentsToStorage();
     localStorage.setItem('lesson_scheduler_memos_keep', JSON.stringify(state.memos));
+    localStorage.setItem('lesson_scheduler_notices', JSON.stringify(state.notices));
   } catch (error) {
     console.error('Error loading data from Supabase:', error);
     loadStateFromLocalStorage();
@@ -1067,30 +1268,35 @@ function updateCurrentTimeIndicator() {
 // Dynamic Student Lists
 function updateStudentDropdowns() {
   // 1. Sidebar Filter
-  const currentFilterVal = studentFilter.value;
-  studentFilter.innerHTML = '<option value="all">すべての生徒</option>';
-  
-  state.students.forEach(st => {
-    const option = document.createElement('option');
-    option.value = st.id;
-    option.textContent = st.name;
-    studentFilter.appendChild(option);
-  });
-  
-  studentFilter.value = currentFilterVal || 'all';
+  if (studentFilter) {
+    const currentFilterVal = studentFilter.value;
+    studentFilter.innerHTML = '<option value="all">すべての生徒</option>';
+    
+    state.students.forEach(st => {
+      const option = document.createElement('option');
+      option.value = st.id;
+      option.textContent = st.name;
+      studentFilter.appendChild(option);
+    });
+    
+    studentFilter.value = currentFilterVal || 'all';
+  }
 
   // 2. Modal Dropdown
-  lessonStudentInput.innerHTML = '<option value="" disabled selected>生徒を選択してください</option>';
-  state.students.forEach(st => {
-    const option = document.createElement('option');
-    option.value = st.id;
-    option.textContent = st.name;
-    lessonStudentInput.appendChild(option);
-  });
+  if (lessonStudentInput) {
+    lessonStudentInput.innerHTML = '<option value="" disabled selected>生徒を選択してください</option>';
+    state.students.forEach(st => {
+      const option = document.createElement('option');
+      option.value = st.id;
+      option.textContent = st.name;
+      lessonStudentInput.appendChild(option);
+    });
+  }
 }
 
 // Dynamic Start Time List (30-minute increments within operating hours)
 function populateStartTimeDropdown() {
+  if (!lessonStartTimeInput) return;
   lessonStartTimeInput.innerHTML = '';
   // Populate from START_HOUR to END_HOUR-1 in 30-minute increments
   for (let hour = START_HOUR; hour < END_HOUR; hour++) {
@@ -1536,9 +1742,13 @@ function setupEventListeners() {
   });
 
   // Duration/Start Time listeners in Modal for dynamic end time calculation
-  lessonStartTimeInput.addEventListener('change', updateComputedEndTime);
-  for (const radio of lessonDurationInputs) {
-    radio.addEventListener('change', updateComputedEndTime);
+  if (lessonStartTimeInput) {
+    lessonStartTimeInput.addEventListener('change', updateComputedEndTime);
+  }
+  if (lessonDurationInputs) {
+    for (const radio of lessonDurationInputs) {
+      radio.addEventListener('change', updateComputedEndTime);
+    }
   }
 
   // Handle Lesson Form Submit
