@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>授業スケジュール表管理ツール</title>
   <meta name="description" content="Googleカレンダー風の洗練されたデザインで、授業時間を60分・90分・120分から選んで簡単スケジュール登録。生徒ごとの色分け、重複チェック、ダークモード対応。">
-  <link rel="stylesheet" href="style.css?v=20260610-notice-debug2">
+  <link rel="stylesheet" href="style.css?v=20260610-notice-pin1">
 </head>
 <body>
 
@@ -345,13 +345,39 @@
           <div class="brand-icon" style="width:32px; height:32px; font-size:1rem;">掲</div>
           <h2 style="font-size: 1.125rem;">連絡事項掲示板</h2>
         </div>
-        <button id="closeNoticeModalBtn" class="close-btn" aria-label="閉じる">&times;</button>
+        <button type="button" id="closeNoticeModalBtn" class="modal-close-btn" aria-label="閉じる">&times;</button>
       </div>
       <div class="modal-body notice-modal-body">
         
         <!-- Admin only: Add Notice Form -->
         <div id="addNoticeContainer" class="add-notice-container">
+          <label for="noticeStudent" class="form-label">対象生徒</label>
+          <select id="noticeStudent" class="form-control notice-student-select" aria-label="対象生徒">
+            <option value="all">全員</option>
+          </select>
+          <label for="newNoticeText" class="form-label">連絡事項</label>
           <textarea id="newNoticeText" class="keep-textarea" style="border: 1px solid var(--border-color); border-radius: 8px; margin-bottom: 0.5rem;" placeholder="新しい連絡事項を入力..." rows="3"></textarea>
+          <label class="notice-pinned-toggle">
+            <input type="checkbox" id="noticePinned">
+            <span>緊急度高としてピン留めする</span>
+          </label>
+          <div class="notice-color-options" aria-label="緊急連絡の背景色">
+            <label class="notice-color-option">
+              <input type="radio" name="noticeColor" value="red">
+              <span class="notice-color-swatch notice-color-swatch-red"></span>
+              <span>赤</span>
+            </label>
+            <label class="notice-color-option">
+              <input type="radio" name="noticeColor" value="blue">
+              <span class="notice-color-swatch notice-color-swatch-blue"></span>
+              <span>青</span>
+            </label>
+            <label class="notice-color-option">
+              <input type="radio" name="noticeColor" value="default" checked>
+              <span class="notice-color-swatch notice-color-swatch-default"></span>
+              <span>デフォルト</span>
+            </label>
+          </div>
           <div style="text-align: right;">
             <button id="submitNoticeBtn" class="btn btn-primary">投稿する</button>
           </div>
@@ -369,6 +395,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260610-notice-debug2"></script>
+  <script src="app.js?v=20260610-notice-pin1"></script>
 </body>
 </html>

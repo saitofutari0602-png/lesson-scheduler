@@ -1809,6 +1809,67 @@ body.dark-mode .warning-banner {
   border-radius: 8px;
 }
 
+.notice-student-select {
+  width: 100%;
+}
+
+.notice-pinned-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.notice-pinned-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent-primary);
+}
+
+.notice-color-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.notice-color-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.notice-color-option input {
+  position: absolute;
+  opacity: 0;
+}
+
+.notice-color-option:has(input:checked) {
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+  background-color: var(--accent-primary-light);
+}
+
+.notice-color-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+}
+
+.notice-color-swatch-red { background-color: #fee2e2; border-color: #fca5a5; }
+.notice-color-swatch-blue { background-color: #dbeafe; border-color: #93c5fd; }
+.notice-color-swatch-default { background-color: var(--bg-tertiary); }
+
 .notice-list {
   display: flex;
   flex-direction: column;
@@ -1826,6 +1887,81 @@ body.dark-mode .warning-banner {
   border-left: 4px solid var(--accent-primary);
   box-shadow: 0 1px 3px rgba(0,0,0,0.05);
   transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.notice-item.is-pinned {
+  border-left-width: 6px;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+}
+
+.notice-item.notice-color-red {
+  background-color: #fff1f2;
+  border-left-color: #ef4444;
+}
+
+.notice-item.notice-color-blue {
+  background-color: #eff6ff;
+  border-left-color: #3b82f6;
+}
+
+.notice-item.notice-color-default {
+  background-color: var(--bg-secondary);
+  border-left-color: var(--accent-primary);
+}
+
+[data-theme="dark"] .notice-item.notice-color-red {
+  background-color: rgba(239, 68, 68, 0.18);
+}
+
+[data-theme="dark"] .notice-item.notice-color-blue {
+  background-color: rgba(59, 130, 246, 0.18);
+}
+
+.notice-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.625rem;
+}
+
+.notice-title-row,
+.notice-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.notice-title-row {
+  flex-wrap: wrap;
+}
+
+.notice-actions {
+  flex: 0 0 auto;
+}
+
+.notice-audience {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  background-color: var(--accent-primary-light);
+  color: var(--accent-primary);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.notice-pin-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  background-color: rgba(239, 68, 68, 0.12);
+  color: #dc2626;
+  font-size: 0.75rem;
+  font-weight: 800;
 }
 
 .notice-item:hover {
@@ -1847,10 +1983,9 @@ body.dark-mode .warning-banner {
   text-align: right;
 }
 
+.notice-pin-btn,
 .notice-delete-btn {
-  position: absolute;
-  top: 0.5rem;
-  right: 0.5rem;
+  flex: 0 0 auto;
   background: none;
   border: none;
   color: var(--text-secondary);
@@ -1859,6 +1994,33 @@ body.dark-mode .warning-banner {
   border-radius: 4px;
   opacity: 0.5;
   transition: all 0.2s;
+}
+
+.notice-pin-btn.is-active {
+  opacity: 1;
+  color: var(--accent-primary);
+  background-color: var(--accent-primary-light);
+}
+
+.notice-color-select {
+  max-width: 104px;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.notice-color-select:disabled {
+  opacity: 0.45;
+}
+
+.notice-pin-btn:hover {
+  opacity: 1;
+  color: var(--accent-primary);
+  background-color: var(--accent-primary-light);
 }
 
 .notice-delete-btn:hover {

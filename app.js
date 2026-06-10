@@ -120,6 +120,9 @@ const noticeModal = document.getElementById('noticeModal');
 const closeNoticeModalBtn = document.getElementById('closeNoticeModalBtn');
 const closeNoticeModalFooterBtn = document.getElementById('closeNoticeModalFooterBtn');
 const addNoticeContainer = document.getElementById('addNoticeContainer');
+const noticeStudentInput = document.getElementById('noticeStudent');
+const noticePinnedInput = document.getElementById('noticePinned');
+const noticeColorInputs = document.getElementsByName('noticeColor');
 const newNoticeText = document.getElementById('newNoticeText');
 const submitNoticeBtn = document.getElementById('submitNoticeBtn');
 const noticeList = document.getElementById('noticeList');
@@ -323,14 +326,27 @@ function setupNoticeBoard() {
   if (!noticeBoardBtn) return; // Feature might not be in all pages
 
   // Modal display toggles
-  noticeBoardBtn.addEventListener('click', () => {
+  const openModal = () => {
+    populateNoticeStudentOptions();
     renderNotices();
-    if (noticeModal) noticeModal.style.display = 'flex';
-  });
+    if (!noticeModal) return;
+    noticeModal.style.display = 'flex';
+    requestAnimationFrame(() => {
+      noticeModal.classList.add('is-open');
+    });
+  };
 
   const closeModal = () => {
-    if (noticeModal) noticeModal.style.display = 'none';
+    if (!noticeModal) return;
+    noticeModal.classList.remove('is-open');
+    setTimeout(() => {
+      if (!noticeModal.classList.contains('is-open')) {
+        noticeModal.style.display = 'none';
+      }
+    }, 250);
   };
+
+  noticeBoardBtn.addEventListener('click', openModal);
 
   if (closeNoticeModalBtn) closeNoticeModalBtn.addEventListener('click', closeModal);
   if (closeNoticeModalFooterBtn) closeNoticeModalFooterBtn.addEventListener('click', closeModal);
@@ -355,6 +371,10 @@ function setupNoticeBoard() {
 
       const newNotice = {
         id: 'notice-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+        studentId: noticeStudentInput ? noticeStudentInput.value : 'all',
+        studentName: noticeStudentInput ? noticeStudentInput.options[noticeStudentInput.selectedIndex]?.textContent || '全員' : '全員',
+        pinned: Boolean(noticePinnedInput && noticePinnedInput.checked),
+        color: noticePinnedInput && noticePinnedInput.checked ? getSelectedNoticeColor() : 'default',
         content: text,
         createdAt: Date.now()
       };
@@ -367,6 +387,37 @@ function setupNoticeBoard() {
   }
 }
 
+function populateNoticeStudentOptions() {
+  if (!noticeStudentInput) return;
+
+  const currentValue = noticeStudentInput.value || 'all';
+  noticeStudentInput.innerHTML = '<option value="all">全員</option>';
+
+  state.students.forEach(student => {
+    const option = document.createElement('option');
+    option.value = student.id;
+    option.textContent = student.name;
+    noticeStudentInput.appendChild(option);
+  });
+
+  noticeStudentInput.value = state.students.some(student => student.id === currentValue) ? currentValue : 'all';
+}
+
+function getSelectedNoticeColor() {
+  for (const radio of noticeColorInputs || []) {
+    if (radio.checked) return radio.value;
+  }
+  return 'default';
+}
+
+function normalizeNoticeColor(color) {
+  return ['red', 'blue', 'default'].includes(color) ? color : 'default';
+}
+
+function persistNoticesToLocalStorage() {
+  localStorage.setItem('lesson_scheduler_notices', JSON.stringify(state.notices));
+}
+
 async function saveNoticesAsync(noticeObj, action) {
   if (supabaseClient) {
     try {
@@ -374,12 +425,14 @@ async function saveNoticesAsync(noticeObj, action) {
         await supabaseClient.from('notices').insert(noticeObj);
       } else if (action === 'delete') {
         await supabaseClient.from('notices').delete().eq('id', noticeObj.id);
+      } else if (action === 'update') {
+        await supabaseClient.from('notices').update(noticeObj).eq('id', noticeObj.id);
       }
     } catch (error) {
       console.error('Notice sync error:', error);
     }
   }
-  localStorage.setItem('lesson_scheduler_notices', JSON.stringify(state.notices));
+  persistNoticesToLocalStorage();
 }
 
 function renderNotices() {
@@ -387,6 +440,9 @@ function renderNotices() {
   noticeList.innerHTML = '';
   
   const sorted = [...(state.notices || [])].sort((a, b) => {
+    if (Boolean(a.pinned) !== Boolean(b.pinned)) {
+      return Boolean(b.pinned) - Boolean(a.pinned);
+    }
     const timeA = (typeof a.createdAt === 'number' || /^\d+$/.test(String(a.createdAt))) ? Number(a.createdAt) : new Date(a.createdAt).getTime();
     const timeB = (typeof b.createdAt === 'number' || /^\d+$/.test(String(b.createdAt))) ? Number(b.createdAt) : new Date(b.createdAt).getTime();
     return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
@@ -399,14 +455,25 @@ function renderNotices() {
 
   sorted.forEach(notice => {
     const item = document.createElement('div');
-    item.className = 'notice-item';
+    const isPinned = Boolean(notice.pinned);
+    const noticeColor = normalizeNoticeColor(notice.color);
+    item.className = `notice-item ${isPinned ? `is-pinned notice-color-${noticeColor}` : ''}`;
     
     const dateObj = new Date((typeof notice.createdAt === 'number' || /^\d+$/.test(String(notice.createdAt))) ? Number(notice.createdAt) : notice.createdAt);
     const dateStr = isNaN(dateObj.getTime()) ? '日付不明' : `${dateObj.getFullYear()}/${String(dateObj.getMonth()+1).padStart(2, '0')}/${String(dateObj.getDate()).padStart(2, '0')} ${String(dateObj.getHours()).padStart(2, '0')}:${String(dateObj.getMinutes()).padStart(2, '0')}`;
+    const audienceName = notice.studentName || (notice.studentId === 'all' ? '全員' : state.students.find(st => st.id === notice.studentId)?.name || '全員');
 
-    let deleteBtnHtml = '';
+    let actionControlsHtml = '';
     if (!isReadOnly) {
-      deleteBtnHtml = `
+      actionControlsHtml = `
+        <button class="notice-pin-btn ${isPinned ? 'is-active' : ''}" type="button" aria-label="${isPinned ? 'ピン留め解除' : 'ピン留め'}" data-id="${notice.id}" title="${isPinned ? 'ピン留め解除' : 'ピン留め'}">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5l14 14M14 3l7 7-4 1-4 4-1 4-7-7 4-1 4-4 1-4z"/></svg>
+        </button>
+        <select class="notice-color-select" aria-label="緊急背景色" data-id="${notice.id}" ${isPinned ? '' : 'disabled'}>
+          <option value="default" ${noticeColor === 'default' ? 'selected' : ''}>デフォルト</option>
+          <option value="red" ${noticeColor === 'red' ? 'selected' : ''}>赤</option>
+          <option value="blue" ${noticeColor === 'blue' ? 'selected' : ''}>青</option>
+        </select>
         <button class="notice-delete-btn" aria-label="削除" data-id="${notice.id}">
           <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
         </button>
@@ -414,12 +481,38 @@ function renderNotices() {
     }
 
     item.innerHTML = `
+      <div class="notice-item-header">
+        <div class="notice-title-row">
+          <span class="notice-audience">${escapeHtml(audienceName)}</span>
+          ${isPinned ? '<span class="notice-pin-badge">緊急・ピン留め</span>' : ''}
+        </div>
+        <div class="notice-actions">${actionControlsHtml}</div>
+      </div>
       <div class="notice-content">${escapeHtml(notice.content)}</div>
       <div class="notice-meta">${dateStr}</div>
-      ${deleteBtnHtml}
     `;
 
     if (!isReadOnly) {
+      const pinBtn = item.querySelector('.notice-pin-btn');
+      if (pinBtn) {
+        pinBtn.addEventListener('click', () => {
+          notice.pinned = !Boolean(notice.pinned);
+          notice.color = notice.pinned ? normalizeNoticeColor(notice.color) : 'default';
+          saveNoticesAsync(notice, 'update');
+          renderNotices();
+        });
+      }
+
+      const colorSelect = item.querySelector('.notice-color-select');
+      if (colorSelect) {
+        colorSelect.addEventListener('change', () => {
+          notice.pinned = true;
+          notice.color = normalizeNoticeColor(colorSelect.value);
+          saveNoticesAsync(notice, 'update');
+          renderNotices();
+        });
+      }
+
       const delBtn = item.querySelector('.notice-delete-btn');
       if (delBtn) {
         delBtn.addEventListener('click', (e) => {
