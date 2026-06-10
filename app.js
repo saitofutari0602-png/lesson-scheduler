@@ -21,6 +21,7 @@ const END_HOUR = 22;
 const HOURS_COUNT = END_HOUR - START_HOUR;
 const HOUR_HEIGHT = 80; // Must match CSS --hour-height
 const DRAG_SNAP_MINUTES = 30;
+const NOTICE_PAYLOAD_PREFIX = '__LESSON_NOTICE_V1__:';
 
 // State variables
 let state = {
@@ -414,6 +415,57 @@ function normalizeNoticeColor(color) {
   return ['red', 'blue', 'default'].includes(color) ? color : 'default';
 }
 
+function serializeNoticeForSupabase(notice) {
+  const payload = {
+    content: notice.content || '',
+    studentId: notice.studentId || 'all',
+    studentName: notice.studentName || '全員',
+    pinned: Boolean(notice.pinned),
+    color: normalizeNoticeColor(notice.color),
+    createdAt: notice.createdAt || Date.now()
+  };
+
+  return {
+    id: notice.id,
+    content: NOTICE_PAYLOAD_PREFIX + JSON.stringify(payload),
+    createdAt: payload.createdAt
+  };
+}
+
+function normalizeNoticeFromSupabase(record) {
+  const baseNotice = {
+    id: record.id,
+    content: record.content || '',
+    studentId: 'all',
+    studentName: '全員',
+    pinned: false,
+    color: 'default',
+    createdAt: record.createdAt || Date.now()
+  };
+
+  if (typeof record.content !== 'string' || !record.content.startsWith(NOTICE_PAYLOAD_PREFIX)) {
+    return baseNotice;
+  }
+
+  try {
+    const payload = JSON.parse(record.content.slice(NOTICE_PAYLOAD_PREFIX.length));
+    return {
+      ...baseNotice,
+      ...payload,
+      id: record.id,
+      content: payload.content || '',
+      studentId: payload.studentId || 'all',
+      studentName: payload.studentName || '全員',
+      pinned: Boolean(payload.pinned),
+      color: normalizeNoticeColor(payload.color),
+      createdAt: payload.createdAt || record.createdAt || Date.now()
+    };
+  } catch (error) {
+    console.warn('Invalid notice payload:', error);
+    return baseNotice;
+  }
+}
+
 function persistNoticesToLocalStorage() {
   localStorage.setItem('lesson_scheduler_notices', JSON.stringify(state.notices));
 }
@@ -421,15 +473,21 @@ function persistNoticesToLocalStorage() {
 async function saveNoticesAsync(noticeObj, action) {
   if (supabaseClient) {
     try {
+      let result = null;
       if (action === 'insert') {
-        await supabaseClient.from('notices').insert(noticeObj);
+        result = await supabaseClient.from('notices').insert(serializeNoticeForSupabase(noticeObj));
       } else if (action === 'delete') {
-        await supabaseClient.from('notices').delete().eq('id', noticeObj.id);
+        result = await supabaseClient.from('notices').delete().eq('id', noticeObj.id);
       } else if (action === 'update') {
-        await supabaseClient.from('notices').update(noticeObj).eq('id', noticeObj.id);
+        result = await supabaseClient.from('notices').update(serializeNoticeForSupabase(noticeObj)).eq('id', noticeObj.id);
+      }
+
+      if (result && result.error) {
+        throw result.error;
       }
     } catch (error) {
       console.error('Notice sync error:', error);
+      showToast('連絡事項のオンライン同期に失敗しました。', 'warning');
     }
   }
   persistNoticesToLocalStorage();
@@ -800,7 +858,7 @@ async function loadStateFromStorage() {
     if (noticesError) throw noticesError;
 
     if (noticesData) {
-      state.notices = noticesData;
+      state.notices = noticesData.map(normalizeNoticeFromSupabase);
     } else {
       state.notices = [];
     }
